@@ -1,0 +1,419 @@
+-- Тема 1 - расчёт бизнес-показателей
+-- Урок 8: практика расчёта Lifetime Value
+-- Задача 2
+
+--Добавьте группировку по месяцу создания аккаунта клиента, используя функцию DATE_TRUNC().
+--Дополните предыдущий запрос:
+--Присоедините к orders таблицу с данными пользователей.
+--секите дату создания аккаунта до месяца и сгруппируйте таблицу по этому полю.
+--В итоговую таблицу должны войти два поля: месяц создания аккаунта и значение LTV за этот месяц.
+SELECT
+CAST(DATE_TRUNC('month', u.created_at) AS date) as month,
+sum(o.total_amt)/count(distinct u.user_id) as LTV
+FROM tools_shop.orders o
+LEFT JOIN tools_shop.users u ON u.user_id = o.user_id
+GROUP BY month
+
+
+
+-- Урок 10: Практика: ARPU и ARPPU
+-- 1
+select
+sum(o.total_amt)/count(DISTINCT u.user_id) as arpu
+FROM
+tools_shop.orders o
+RIGHT JOIN tools_shop.users u
+ON o.user_id = u.user_id
+
+--2
+SELECT o.event_dt,
+SUM(o.revenue) / COUNT(DISTINCT p.user_id) AS arppu
+FROM online_store.orders o
+JOIN online_store.profiles p ON o.user_id = p.user_id
+GROUP BY o.event_dt;
+
+--3
+SELECT
+CAST(DATE_TRUNC('year', o.created_at) as date) as year,
+round(sum(o.total_amt) / count(DISTINCT u.user_id), 2) as arppu
+FROM tools_shop.orders o
+JOIN
+tools_shop.users u
+ON o.user_id = u.user_id
+GROUP BY year
+
+-- Урок 13: Практика: Расчёт ROI
+--1
+SELECT CAST(DATE_TRUNC('month', o.paid_at) as date) AS order_month,
+       SUM(total_amt) AS orders_sum
+FROM tools_shop.orders o
+GROUP BY order_month;
+--2
+SELECT CAST(DATE_TRUNC('month', c.created_at) as date) as cost_month,
+       SUM(costs) AS costs
+FROM tools_shop.costs c
+GROUP BY cost_month;
+--3
+SELECT -- добавьте нужные поля и расчёты
+user_cost.dt,
+       total_amt * 100 / costs AS ROI
+FROM
+(SELECT DATE_TRUNC('month', created_at)::date AS dt,
+       SUM(costs) AS costs
+FROM tools_shop.costs
+GROUP BY dt) user_cost
+JOIN
+(SELECT DATE_TRUNC('month', paid_at)::date AS dt,
+       SUM(total_amt) AS total_amt
+FROM tools_shop.orders
+GROUP BY dt) users_spent
+ON user_cost.dt = users_spent.dt;
+
+-- Оконные функции
+-- Урок 3
+--1
+select o.*, sum(o.total_amt)
+OVER () as total_sum
+FROM tools_shop.orders o
+
+--2
+select u.*, count(u.user_id) OVER () as users_number
+FROM
+tools_shop.users u
+
+-- Урок 5: практика PARTITION_BY
+--1
+SELECT o.*, sum(o.total_amt) OVER (PARTITION BY user_id)
+FROM tools_shop.orders o
+
+--2
+SELECT
+ o.*,
+ SUM(o.total_amt) OVER (PARTITION BY DATE_TRUNC('month', o.paid_at))
+ FROM
+ tools_shop.orders o;
+
+ -- Урок 7: Практика: Аггрегирующие оконные функции
+ --1
+ SELECT o.*, count(o.order_id) OVER (PARTITION BY o.created_at::date)
+ FROM tools_shop.orders o
+
+ --2
+ SELECT o.*, sum(o.total_amt) OVER (PARTITION BY DATE_TRUNC('month', o.paid_at)::date)
+ FROM tools_shop.orders o
+
+ -- Практика: ROW_NUMBER
+ --1
+
+ SELECT i.*, ROW_NUMBER() OVER ()
+ FROM tools_shop.items i
+
+ --2
+ SELECT o.*, ROW_NUMBER() OVER()
+ FROM tools_shop.orders o
+
+ -- Урок 4: Практика: ORDER BY
+--1
+WITH users AS
+  (SELECT *,
+          ROW_NUMBER() OVER (ORDER BY u.created_at)
+   FROM tools_shop.users u)
+SELECT user_id
+FROM users
+WHERE row_number = 2021
+
+--2
+WITH orders AS
+  (SELECT *,
+          ROW_NUMBER() OVER (ORDER BY o.paid_at DESC)
+   FROM tools_shop.orders o)
+SELECT total_amt
+FROM orders
+WHERE row_number = 50
+
+-- Практика: RANK() и DENSE_RANK()
+SELECT r.*, RANK() OVER (ORDER BY r.item_id)
+from tools_shop.order_x_item r
+
+--2
+SELECT u.*, DENSE_RANK() OVER (ORDER BY u.created_at DESC)
+FROM tools_shop.users u
+
+-- Урок 8: Практика NTILE()
+--1
+SELECT o.order_id,
+o.total_amt, NTILE(10) OVER (ORDER BY o.total_amt)
+FROM tools_shop.orders o
+
+--2
+SELECT
+u.user_id,
+u.created_at,
+NTILE(5) OVER (ORDER BY u.created_at DESC)
+FROM tools_shop.users u
+
+-- Урок 9: Сочетание операторов окна с функциями ранжирования
+--1
+SELECT
+o.*, ROW_NUMBER() OVER (PARTITION BY o.user_id ORDER BY o.paid_at)
+FROM tools_shop.orders o
+--2
+SELECT
+e.*, ROW_NUMBER() OVER(PARTITION BY e.user_id ORDER BY e.event_time DESC)
+FROM tools_shop.events e
+
+-----
+-- Урок 2: практика: кумулятивные значения
+--1
+SELECT o.paid_at, o.total_amt, SUM(o.total_amt) OVER (ORDER BY o.paid_at)
+FROM tools_shop.orders o
+
+--2
+SELECT
+o.user_id, o.paid_at, o.total_amt, sum(o.total_amt) OVER (PARTITION BY o.user_id ORDER BY o.paid_at)
+FROM tools_shop.orders o
+
+--3
+SELECT
+(DATE_TRUNC('month', o.paid_at)::date), o.total_amt,
+SUM(o.total_amt) OVER (ORDER BY DATE_TRUNC('month', o.paid_at)::date)
+FROM tools_shop.orders o
+
+-- Урок 5: Практика: функции смещения
+--1
+SELECT order_id, user_id, paid_at, LAG(paid_at, 1, '1980-01-01')
+OVER (PARTITION BY user_id ORDER BY paid_at)
+FROM tools_shop.orders
+
+-- 2
+SELECT
+e.event_id,
+e.event_time,
+e.user_id,
+LEAD(e.event_time) OVER (PARTITION BY e.user_id ORDER BY e.event_time)
+FROM tools_shop.events e
+
+--3
+SELECT
+e.event_id,
+e.event_time,
+e.user_id,
+(LEAD(e.event_time) OVER (PARTITION BY e.user_id ORDER BY e.event_time) - e.event_time) as timeshift
+FROM tools_shop.events e
+
+-- Урок 7: Практика: Оконные функции
+--1
+SELECT
+c.created_at::date,
+c.costs,
+ROW_NUMBER() OVER (ORDER BY costs desc)
+FROM tools_shop.costs c
+
+--2
+SELECT
+c.created_at::date,
+c.costs,
+DENSE_RANK() OVER (ORDER BY costs desc)
+FROM tools_shop.costs c
+
+--3
+SELECT DISTINCT (user_id) FROM
+(SELECT  *,
+              ROW_NUMBER() OVER (PARTITION BY user_id) AS rn
+      FROM tools_shop.orders) sel
+      WHERE sel.rn >=3
+
+--4
+SELECT COUNT(order_id)
+FROM (SELECT  *,
+        ROW_NUMBER() OVER (PARTITION BY order_id) AS rn
+FROM tools_shop.order_x_item) AS sel
+WHERE sel.rn >= 4;
+
+--5
+SELECT  sel.date_trunc,
+        SUM(sel.count) OVER (ORDER BY sel.date_trunc)
+FROM (SELECT  CAST(DATE_TRUNC('month', created_at) AS date),
+              COUNT(user_id)
+      FROM tools_shop.users
+      GROUP BY CAST(DATE_TRUNC('month', created_at) AS date)
+      ORDER BY date_trunc) AS sel
+
+--6
+SELECT  dt.date_trunc,
+        SUM(dt.sum) OVER (ORDER BY dt.date_trunc)
+FROM (SELECT  CAST(DATE_TRUNC('month', created_at) AS date),
+        SUM(costs)
+FROM tools_shop.costs
+WHERE EXTRACT(YEAR FROM created_at) BETWEEN 2017 AND 2018
+GROUP BY CAST(DATE_TRUNC('month', created_at) AS date)) AS dt;
+
+--7
+SELECT  *,
+        SUM(dc.count) OVER (ORDER BY dc.date)
+FROM (SELECT  CAST(DATE_TRUNC('month', event_time) AS date) AS date,
+              COUNT(event_name)
+      FROM tools_shop.events
+      WHERE event_name = 'view_item'
+      AND user_id IN (SELECT  user_id
+                      FROM tools_shop.orders
+                      WHERE paid_at IS NOT NULL)
+      GROUP BY date
+      ORDER BY date) AS dc;
+
+--8
+SELECT
+            o.order_id,
+            DATE_TRUNC('month', o.paid_at) :: date AS month,
+            o.total_amt,
+            COUNT(o.order_id) OVER w AS cumulative_orders,
+            SUM(o.total_amt) OVER w AS cumulative_cost
+FROM
+            tools_shop.orders o
+WINDOW w AS (
+             ORDER BY DATE_TRUNC('month', o.paid_at)
+)
+
+
+--9
+WITH t_1 AS (SELECT  CAST(DATE_TRUNC('month', created_at) AS date) AS month_date,
+              SUM(costs) AS month_cost
+        FROM tools_shop.costs
+        GROUP BY month_date
+        ORDER BY month_date)
+SELECT *,
+       month_cost - LAG(month_cost, 1, month_cost) OVER (ORDER BY month_date) AS difference
+FROM t_1;
+
+--10
+WITH t_1 AS (SELECT  CAST(DATE_TRUNC('year', paid_at) AS date) AS year_date,
+                     SUM(total_amt) AS year_total
+             FROM tools_shop.orders
+             GROUP BY year_date
+             ORDER BY year_date)
+
+SELECT  *,
+        LEAD(year_total, 1, 638720.14) OVER (ORDER BY year_date) - year_total  AS difference
+FROM t_1;
+
+-- Урок 3: Расчёт Retention rate: Практика
+--1
+SELECT
+
+  o.user_id,
+  (EXTRACT (MONTH FROM o.paid_at)) AS month_of_payment,
+  MIN(EXTRACT (MONTH FROM o.paid_at)) OVER (PARTITION BY o.user_id) AS month_of_first_payment
+FROM tools_shop.orders o
+WHERE
+EXTRACT(YEAR FROM o.paid_at) = 2020
+-- про 2020 год в задании не было, пришлось методом научного тыка
+
+--2
+WITH first_purchase AS (
+    SELECT user_id as userid, MIN(EXTRACT(MONTH FROM CAST(paid_at AS date))) AS first_month
+    FROM tools_shop.orders
+    WHERE DATE_TRUNC('month', paid_at) BETWEEN '2020-01-01' AND '2020-12-31'
+    GROUP BY user_id
+)
+
+SELECT first_month, EXTRACT(MONTH FROM CAST(paid_at AS date)) AS purchase_month, COUNT(DISTINCT user_id) AS unique_users
+FROM tools_shop.orders
+JOIN first_purchase ON orders.user_id = first_purchase.userid
+WHERE DATE_TRUNC('month', paid_at) BETWEEN '2020-01-01' AND '2020-12-31'
+GROUP BY first_month, purchase_month
+ORDER BY first_month, purchase_month;
+
+--3
+WITH cohort_data AS (
+SELECT user_id,
+EXTRACT(MONTH FROM CAST(paid_at AS date)) AS purchase_month,
+MIN(EXTRACT(MONTH FROM CAST(paid_at AS date))) OVER(PARTITION BY user_id) AS first_purchase_month
+FROM tools_shop.orders
+WHERE DATE_TRUNC('month', paid_at) BETWEEN '2020-01-01' AND '2020-12-31'
+)
+,
+cohort_counts AS (
+SELECT first_purchase_month,
+purchase_month,
+COUNT(DISTINCT user_id) AS unique_users
+FROM cohort_data
+GROUP BY first_purchase_month, purchase_month
+)
+,
+cohort_retention AS (
+SELECT first_purchase_month,
+purchase_month,
+unique_users,
+first_value(unique_users) OVER (PARTITION BY first_purchase_month ORDER BY purchase_month) AS cohort_size,
+ROUND((unique_users::numeric / first_value(unique_users) OVER (PARTITION BY first_purchase_month ORDER BY purchase_month) * 100), 2) AS retention_rate
+FROM cohort_counts
+)
+SELECT first_purchase_month, purchase_month, retention_rate
+FROM cohort_retention
+ORDER BY first_purchase_month, purchase_month;
+
+
+-- Урок 5: Расчёт retention rate: Практика: Часть 2
+--1
+SELECT user_id, count(user_id) OVER()
+FROM tools_shop.users
+WHERE
+DATE_TRUNC('month', created_at)::date = '2020-01-01'
+
+-- 2
+SELECT
+* FROM
+tools_shop.events
+WHERE
+platform = 'android' AND
+event_time >= '2020-01-01'
+AND
+event_time < '2020-04-01'
+
+--3
+SELECT
+e.*, usrs.user_id, usrs.count FROM
+tools_shop.events e
+INNER JOIN (SELECT user_id, count(user_id) OVER()
+FROM tools_shop.users
+WHERE
+DATE_TRUNC('month', created_at)::date = '2020-01-01'
+) AS usrs ON usrs.user_id = e.user_id
+WHERE
+e.platform = 'android' AND
+e.event_time >= '2020-01-01'
+AND
+e.event_time < '2020-04-01'
+
+--4
+WITH  users AS (SELECT user_id AS user_id, COUNT(*) OVER() AS total_users
+        FROM tools_shop.users
+        WHERE created_at::DATE BETWEEN '2020-01-01' AND '2020-01-31')
+SELECT DATE_TRUNC ('month', event_time) AS event_month,
+       total_users,
+      COUNT(DISTINCT events.user_id) as rr
+FROM tools_shop.events INNER JOIN users ON tools_shop.events.user_id = users.user_id
+ WHERE DATE_TRUNC ('month', event_time) BETWEEN '2020-01-01' AND '2020-03-31' AND platform = 'android'
+GROUP BY event_month, total_users
+ORDER BY event_month, total_users
+--5
+WITH  users AS (SELECT user_id AS user_id, COUNT(*) OVER() AS total_users
+        FROM tools_shop.users
+        WHERE created_at::DATE BETWEEN '2020-01-01' AND '2020-01-31')
+SELECT DATE_TRUNC ('month', event_time) AS event_month,
+       total_users,
+      (COUNT(DISTINCT events.user_id)::numeric) / total_users as rr
+FROM tools_shop.events INNER JOIN users ON tools_shop.events.user_id = users.user_id
+ WHERE DATE_TRUNC ('month', event_time) BETWEEN '2020-01-01' AND '2020-03-31' AND platform = 'android'
+GROUP BY event_month, total_users
+ORDER BY event_month, total_users
+
+-- Урок 6: Расчёт Churn Rate: Практика
+--1
+
+SELECT
+DISTINCT o.user_id
+FROM tools_shop.orders o
+
+
+
