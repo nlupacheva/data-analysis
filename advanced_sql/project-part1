@@ -1,0 +1,157 @@
+--1
+SELECT count(p.id)
+FROM stackoverflow.posts p, stackoverflow.post_types pt
+WHERE
+(p.score > 300
+OR p.favorites_count >= 100)
+AND p.post_type_id = pt.id
+AND pt.type = 'Question'
+
+--2
+SELECT
+AVG(num)::int FROM
+(SELECT count(p.id) as num, p.creation_date::date
+FROM stackoverflow.posts p, stackoverflow.post_types pt
+WHERE
+p.post_type_id = pt.id
+AND pt.type = 'Question'
+GROUP BY p.creation_date::date
+HAVING p.creation_date::date BETWEEN '2008-11-01' AND'2008-11-18'
+) AS posts_filtered
+
+-- 3
+SELECT
+COUNT(DISTINCT users_filtered.userid) FROM
+(SELECT u.id as userid
+FROM
+stackoverflow.users u
+JOIN stackoverflow.badges b ON b.user_id = u.id
+WHERE b.creation_date::date = u.creation_date::date) AS users_filtered
+
+--- 4
+SELECT
+COUNT(DISTINCT p.id)
+FROM stackoverflow.posts p
+JOIN stackoverflow.users u  ON u.id = p.user_id
+JOIN stackoverflow.votes v ON v.post_id = p.id
+WHERE u.display_name = 'Joel Coehoorn'
+
+---5
+
+SELECT vt.*,
+       ROW_NUMBER() OVER(ORDER BY vt.id DESC) AS rank
+FROM stackoverflow.vote_types vt
+ORDER BY vt.id;
+
+-- 6
+SELECT
+u.id as userid, count(v.id) as votesnumber
+FROM stackoverflow.votes v
+JOIN stackoverflow.vote_types vt ON vt.id = v.vote_type_id
+JOIN stackoverflow.users u ON v.user_id = u.id
+WHERE vt.name = 'Close'
+GROUP BY u.id
+ORDER BY votesnumber DESC, userid DESC
+LIMIT 10
+
+-- 7
+SELECT
+u.id as userid,
+count(b.id) as badgesnumber,
+DENSE_RANK() OVER(ORDER BY count(b.id) DESC)
+FROM stackoverflow.users u
+JOIN stackoverflow.badges b ON b.user_id = u.id
+WHERE b.creation_date::date BETWEEN '2008-11-15' AND '2008-12-15'
+GROUP BY userid
+ORDER BY badgesnumber DESC, userid
+LIMIT 10
+
+--- 8
+WITH average_users AS (
+SELECT ROUND(AVG(score)) AS avg_score,
+       user_id
+FROM stackoverflow.posts
+WHERE title IS NOT NULL AND score <> 0
+GROUP BY user_id)
+
+SELECT p.title,
+       average_users.user_id,
+       p.score,
+       average_users.avg_score
+FROM average_users
+JOIN stackoverflow.posts AS p ON average_users.user_id=p.user_id
+WHERE p.title IS NOT NULL AND p.score <> 0;
+
+--- 9
+WITH usersbadges AS
+(SELECT
+u.id as userid, count(b.id) as badgesnumber
+FROM stackoverflow.users u
+JOIN stackoverflow.badges b ON b.user_id = u.id
+GROUP BY userid
+ORDER BY badgesnumber DESC)
+SELECT p.title
+FROM stackoverflow.posts p
+JOIN usersbadges ON usersbadges.userid = p.user_id
+WHERE usersbadges.badgesnumber > 1000
+AND p.title is not null
+
+
+----10
+SELECT
+u.id as userid, u.views,
+        CASE
+          WHEN u.views >= 350 THEN 1
+          WHEN u.views < 100 THEN 3
+          ELSE 2
+       END AS group
+FROM stackoverflow.users u
+WHERE u.location like '%Canada%'
+AND u.views > 0
+
+
+----- 11
+WITH grp AS (SELECT g.id,
+                    g.views,
+                    g.group,
+                    MAX(g.views) OVER (PARTITION BY g.group) AS max
+             FROM (SELECT id,
+                          views,
+                          CASE
+                             WHEN views >= 350 THEN 1
+                             WHEN views < 100 THEN 3
+                             ELSE 2
+                          END AS group
+                   FROM stackoverflow.users
+                   WHERE location LIKE '%Canada%' AND views > 0) as g
+              )
+
+SELECT grp.id,
+       grp.views,
+       grp.group
+FROM grp
+WHERE grp.views = grp.max
+ORDER BY grp.views DESC, grp.id;
+
+
+----- 12
+SELECT *,
+       SUM(uc.cnt_reg) OVER (ORDER BY uc.days) as cnt_users
+FROM (SELECT EXTRACT(DAY FROM creation_date::date) AS days,
+             COUNT(id) AS cnt_reg
+      FROM stackoverflow.users
+      WHERE creation_date::date BETWEEN '2008-11-01' AND '2008-11-30'
+      GROUP BY EXTRACT(DAY FROM creation_date::date)
+      ) as uc;
+
+
+------ 13
+WITH dt AS (SELECT DISTINCT user_id,
+                            MIN(creation_date) OVER (PARTITION BY user_id) AS min_dt
+            FROM stackoverflow.posts)
+
+SELECT dt.user_id,
+       (dt.min_dt - u.creation_date) AS diff
+FROM stackoverflow.users AS u
+JOIN dt ON  u.id = dt.user_id;
+
